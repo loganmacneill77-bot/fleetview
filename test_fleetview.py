@@ -423,6 +423,21 @@ def test_prompt_rendered_once():
     assert "small?pr" not in fleetview.PAGE
 
 
+def test_new_chat_needs_no_browser_dialogs():
+    """"+ New" did nothing at all when clicked (2026-10-11).
+
+    It asked for the folder with window.prompt(), which VS Code's Simple
+    Browser and other embedded webviews answer with null without ever showing
+    a dialog — and null read as Cancel. alert() is dropped the same way, so
+    its errors were invisible too. The folder box and its errors must live on
+    the page."""
+    import re
+    script = fleetview.PAGE.split("<script>", 1)[1]
+    calls = re.findall(r"(?<![\w.])(prompt|alert)\(", script)
+    assert not calls, calls
+    assert 'id="newcwd"' in fleetview.PAGE and "startNew()" in fleetview.PAGE
+
+
 def test_close_uses_the_send_path():
     """Closing a session out is typing /exit at it, not a new endpoint.
 

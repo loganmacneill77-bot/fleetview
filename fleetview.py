@@ -1007,6 +1007,21 @@ body.compact #grid{grid-template-columns:1fr;gap:6px}
 #newbtn{margin-left:auto;font:inherit;font-size:12px;background:#17301f;color:#3ddc84;
  border:1px solid #1f5136;border-radius:6px;padding:4px 10px;cursor:pointer}
 #newbtn:active{transform:scale(.95)}
+/* the folder box is on the page, not window.prompt(): VS Code's Simple
+   Browser and other embedded webviews return null from prompt() and drop
+   alert() without showing anything, so "+ New" looked dead there. */
+#newpane{display:none;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;
+ background:#171e2e;border:1px solid #232d42;border-radius:10px;padding:10px 12px}
+#newpane.on{display:flex}
+#newpane label{font-size:12px;color:#9fb0c9;flex-basis:100%}
+#newcwd{flex:1 1 140px;min-width:0;font:inherit;font-size:16px;background:#0c101a;
+ color:#dce3f0;border:1px solid #232d42;border-radius:8px;padding:8px 10px}
+#newpane button{font:inherit;font-size:13px;border-radius:6px;padding:7px 12px;cursor:pointer}
+#newgo{background:#17301f;color:#3ddc84;border:1px solid #1f5136}
+#newgo[disabled]{opacity:.5}
+#newcancel{background:#171e2e;color:#9fb0c9;border:1px solid #232d42}
+#newerr{flex-basis:100%}
+#newerr:empty{display:none}
 #mode{font:inherit;font-size:12px;background:#171e2e;color:#9fb0c9;
  border:1px solid #232d42;border-radius:6px;padding:4px 10px;cursor:pointer}
 /* D24: the terminal IS the detail view — the transcript log was a lossy
@@ -1069,7 +1084,15 @@ html,body{max-width:100%;overflow-x:hidden}
 </style></head><body>
 <h1>FleetView <small id="totals"></small>
  <button id="newbtn" onclick="newChat()" title="Start a session in a folder">+ New</button>
- <button id="mode" onclick="setMode(!compact)"></button></h1><div id="grid"></div>
+ <button id="mode" onclick="setMode(!compact)"></button></h1>
+<div id="newpane"><label for="newcwd">Start a Claude session in which folder?</label>
+ <input id="newcwd" list="newfolders" autocomplete="off" spellcheck="false"
+  onkeydown="if(event.key==='Enter')startNew();else if(event.key==='Escape')closeNew()">
+ <datalist id="newfolders"></datalist>
+ <button id="newgo" onclick="startNew()">Start</button>
+ <button id="newcancel" onclick="closeNew()">Cancel</button>
+ <div id="newerr" class="err"></div></div>
+<div id="grid"></div>
 <div id="modal" onclick="if(event.target.id==='modal')closeCard()"><div id="sheet">
  <header><span class="dot" id="mdot"></span><b id="mname"></b><span class="proj" id="mproj"></span>
   <button id="x" onclick="closeCard()" aria-label="Back to all sessions"
@@ -1164,21 +1187,37 @@ async function answer(id,n,ev){
  tickNow();
 }
 let folders=[];
-async function newChat(){
- const last=store.get("fvLastCwd","")||folders[0]||"C:\\Claude";
- const cwd=prompt("Start a Claude session in which folder?\n\n"+
-   (folders.length?"Open now:\n  "+folders.join("\n  "):""), last);
- if(!cwd)return;
- const btn=document.getElementById("newbtn");
- btn.disabled=true; btn.textContent="starting\u2026";
+function newChat(){
+ const pane=document.getElementById("newpane");
+ if(pane.classList.contains("on"))return closeNew();
+ document.getElementById("newfolders").innerHTML=
+   folders.map(f=>`<option value="${esc(f)}">`).join("");
+ const box=document.getElementById("newcwd");
+ box.value=store.get("fvLastCwd","")||folders[0]||"C:\\Claude";
+ document.getElementById("newerr").textContent="";
+ pane.classList.add("on");
+ box.focus(); box.select();
+}
+function closeNew(){document.getElementById("newpane").classList.remove("on")}
+async function startNew(){
+ const cwd=document.getElementById("newcwd").value.trim();
+ const err=document.getElementById("newerr"), go=document.getElementById("newgo");
+ if(!cwd){err.textContent="Type a folder path first.";return;}
+ go.disabled=true; go.textContent="starting\u2026"; err.textContent="";
  try{
-  const r=await (await fetch("/new",{method:"POST",
+  const res=await fetch("/new",{method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({cwd})})).json();
-  if(r.ok){store.set("fvLastCwd",cwd);}
-  else alert("Could not start a session:\n\n"+r.error);
- }catch(e){alert("Could not reach FleetView");}
- btn.disabled=false; btn.textContent="+ New";
+    body:JSON.stringify({cwd})});
+  // a 403 from the Host/Origin guard has an empty body, so .json() would
+  // throw and read as "unreachable" — say what actually happened
+  if(!res.ok)err.textContent=`FleetView refused the request (HTTP ${res.status}) \u2014 see fleetview.log`;
+  else{
+   const r=await res.json();
+   if(r.ok){store.set("fvLastCwd",cwd);closeNew();}
+   else err.textContent="Could not start a session: "+r.error;
+  }
+ }catch(e){err.textContent="Could not reach FleetView";}
+ go.disabled=false; go.textContent="Start";
  tickNow();
 }
 const GLYPH={attention:"!",done:"\u2713",waiting:"\u2026",working:"\u25cf",ended:""};
